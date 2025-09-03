@@ -98,7 +98,7 @@ Several steps were taken to **reduce hallucinations**:
 
 - In the packing prompt, the assistant is **forbidden from suggesting obvious or irrelevant items** (e.g., "passport").
 
-> ⚠These defenses improved **trustworthiness** and avoided factual errors — especially when API data was missing or partial.
+> These defenses improved **trustworthiness** and avoided factual errors — especially when API data was missing or partial.
 
 ---
 
@@ -125,5 +125,6 @@ To maintain context across turns, I used a **prompt chaining architecture**:
 - Previous messages (`conversation_history`) are passed into classification to resolve references like “that trip”.
 
 >  This allows the assistant to **understand follow-ups** and maintain logical continuity — a key for natural conversations.
+
 
 
