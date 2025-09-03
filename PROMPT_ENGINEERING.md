@@ -115,7 +115,7 @@ I designed our classification and reasoning prompts to include **self-verificati
 
 ## 8. Prompt Chaining with Context Memory
 
-To maintain context across turns, we used a **prompt chaining architecture**:
+To maintain context across turns, I used a **prompt chaining architecture**:
 
 - Each message is processed through:
   1. Classification
@@ -125,4 +125,5 @@ To maintain context across turns, we used a **prompt chaining architecture**:
 - Previous messages (`conversation_history`) are passed into classification to resolve references like “that trip”.
 
 >  This allows the assistant to **understand follow-ups** and maintain logical continuity — a key for natural conversations.
+
 
