@@ -37,6 +37,23 @@ WEATHER_API_KEY=your_weather_api_key_here
 - **Groq:** [console.groq.com](https://console.groq.com/) - Free signup
 - **Weather:** [openweathermap.org/api](https://openweathermap.org/api) - Free signup
 
+## 📁 Project Files
+
+| File | Description |
+|------|-------------|
+| `app.py` | Streamlit web interface |
+| `main.py` | Main entry point with mode selection |
+| `cli.py` | Command-line interface |
+| `assistant.py` | Core AI assistant logic |
+| `apis.py` | External API integrations (Groq, Weather) |
+| `router.py` | Question classification and routing |
+| `prompts.py` | AI prompt templates |
+| `config.py` | Configuration settings |
+| `test_run.py` |  Batch test suite |
+| `test_debug.py` | Debug tools to show COT (Chain of Thought) behind the model's reasoning |
+| `requirements.txt` | Python dependencies |
+| `PROMPT_ENGINEERING.md` | Technical documentation |
+
 ###  Run
 **🌐 Web interface (recommended):**
 ```bash
@@ -50,5 +67,6 @@ python main.py
 ```
 
 **Ready to start planning your trip?** 🚀
+
 
 
