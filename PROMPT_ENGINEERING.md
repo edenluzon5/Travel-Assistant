@@ -1,296 +1,128 @@
-# 🧠 Prompt Engineering Decisions
+# Prompt Engineering Decisions
 
-This document outlines the key prompt engineering decisions made in the Travel Assistant project, explaining the rationale behind each design choice and how they contribute to the system's effectiveness.
+This document outlines the key prompt engineering decisions used in building the Travel Assistant system. The design focuses on conversation quality, reasoning structure, and safe interaction with external tools (e.g., weather APIs).
 
-## 📋 Table of Contents
+---
 
-1. [Architecture Overview](#architecture-overview)
-2. [Unified Analysis System](#unified-analysis-system)
-3. [Specialized System Prompts](#specialized-system-prompts)
-4. [Clarification System](#clarification-system)
-5. [Chain of Thought Implementation](#chain-of-thought-implementation)
-6. [Anti-Hallucination Measures](#anti-hallucination-measures)
-7. [Context Management](#context-management)
-8. [Performance Optimizations](#performance-optimizations)
+## 1. Dual-Path Prompt Logic (Clarification vs. Direct Answer)
 
-## 🏗️ Architecture Overview
+Each expert prompt (destination, packing, attractions) is structured with **two exclusive paths**:
 
-### Design Philosophy
-The prompt engineering follows a **two-stage architecture**:
-1. **Analysis Stage**: Unified classification and routing
-2. **Generation Stage**: Specialized expert responses
+* **Path 1 – Ask for Clarification:**
+  Triggered for vague queries (e.g., *"What should I pack?", "Where should I go?"*).
+  The assistant asks 2–3 focused clarification questions before proceeding.
 
-This separation allows for:
-- **Efficient routing** with minimal LLM calls
-- **Specialized expertise** for each domain
-- **Consistent classification** across all question types
-- **Context-aware** decision making
+* **Path 2 – Answer Directly:**
+  Used when the user provides specific details (e.g., *"What should I pack for Tokyo in December?"*).
+  The assistant responds immediately with relevant, weather-aware information.
 
-## 🎯 Unified Analysis System
+> ### Only one path may be followed — never both.
 
-### Core Prompt: `UNIFIED_ANALYSIS_PROMPT`
+---
 
-**Purpose**: Single LLM call to classify questions, decide weather needs, extract locations, and determine clarification requirements.
+## 2. Unified JSON Classification Prompt
 
-**Key Design Decisions**:
+The assistant uses a **unified classification prompt** to analyze each user query and return structured JSON.
+This enables downstream routing and minimizes hallucinations.
 
-#### 1. **JSON-Only Output**
+**Fields include:**
+
+* `category`: e.g., `"DESTINATION"`, `"PACKING"`, `"COMPLEX_REASONING"`
+* `needs_clarification`: Boolean to control flow
+* `needs_weather`: Whether to fetch weather
+* `mode`: `"climate"` / `"forecast"`
+* `city`, `country`, `when`: Extracted location/time info
+
+**Example output:**
+
 ```json
 {
-  "category": "DESTINATION|COMPLEX_REASONING|PACKING|ATTRACTIONS|WEATHER|GENERAL",
-  "needs_weather": true|false,
-  "mode": "current|forecast|climate|none",
-  "city": "city_name|null",
-  "country": "country_name|null", 
-  "when": "time_reference|null",
-  "needs_clarification": true|false
+  "category": "PACKING",
+  "needs_weather": true,
+  "mode": "climate",
+  "city": "Tokyo",
+  "country": "Japan",
+  "when": "December",
+  "needs_clarification": false
 }
 ```
 
-**Rationale**: 
-- **Reliable parsing** - No ambiguity in response format
-- **Structured data** - Easy to process programmatically
-- **Error reduction** - Eliminates parsing inconsistencies
+---
 
-#### 2. **Explicit Clarification Rules**
-```
-VAGUE QUESTIONS that need clarification include: 
-"Where should I travel?", "Where should I go for vacation?", 
-"Where should I travel this year?", "What should I pack?", 
-"What should I see?", "Best places to visit?"
-```
+## 3. Chain of Thought (COT) Prompting for Complex Recommendations
 
-**Rationale**:
-- **Prevents generic responses** - Forces personalized recommendations
-- **Improves user experience** - Gets specific details needed
-- **Reduces hallucination** - Avoids making assumptions
+The `COMPLEX_REASONING_PROMPT` enables the assistant to provide high-quality, multi-constraint destination suggestions.  
+I chose to implement **internal chain-of-thought reasoning** in 4 structured steps:
 
-#### 3. **Context-Aware Analysis**
-```
-IMPORTANT: Consider conversation context when available. 
-If the user's question refers to previous conversation 
-(like "that kind of trip", "for that destination"), 
-use the context to understand what they're referring to.
-```
+1. Deconstruct user constraints (e.g., "budget", "family", "nature", "May").
+2. Analyze the tradeoffs (e.g., weather vs. cost).
+3. Evaluate multiple options.
+4. Synthesize one optimal recommendation and one runner-up.
 
-**Rationale**:
-- **Maintains conversation flow** - Understands follow-up questions
-- **Reduces repetition** - Uses previous context intelligently
-- **Natural interaction** - Mimics human conversation patterns
-
-## 🎨 Specialized System Prompts
-
-### Design Pattern: **Path-Based Prompts**
-
-Each specialized prompt follows a **two-path structure**:
-
-#### Path 1: Clarification
-- **Trigger**: Vague or open-ended questions
-- **Action**: Ask 2-3 targeted questions
-- **Goal**: Gather specific details
-
-#### Path 2: Direct Response
-- **Trigger**: Specific questions with sufficient detail
-- **Action**: Provide expert advice
-- **Goal**: Deliver actionable information
-
-### Example: `DESTINATION_SYSTEM_PROMPT`
-
-```
-CRITICAL RULE: You must choose ONLY ONE of the following two paths. Never do both.
+>  I chose this pattern to **simulate a human decision-making process** and avoid shallow suggestions often produced by default LLM responses.
 
 ---
-PATH 1: ASK FOR CLARIFICATION
-Use this path for VAGUE queries like "Where should I go?" or "What do you recommend?".
-- YOUR TASK: Ask 2-3 targeted clarifying questions (Timing, Budget, Interests) to understand the user's needs. Do NOT provide any recommendations yet.
+
+## 4. Weather-Aware Packing Prompts with Hard Constraints
+
+The `PACKING_SYSTEM_PROMPT` uses a strict format to ensure consistency:
+
+- Starts with a **required weather summary**
+- Follows with a **concise 5–7 item list** (excluding generic items like toiletries)
+
+>  I enforced these constraints to ensure that the output is **compact, weather-relevant**, and easy to parse or copy.
+
+> This helped **prevent hallucinations** (e.g., suggesting swimsuits for snowy locations) and made the output feel reliable and expert-like.
 
 ---
-PATH 2: ANSWER DIRECTLY  
-Use this path for SPECIFIC queries like "Is Rome good in May?" or "Should I visit Thailand?".
-- YOUR TASK: Provide direct, detailed answers with practical information.
-```
 
-**Benefits**:
-- **Clear decision logic** - Eliminates ambiguity
-- **Consistent behavior** - Same pattern across all prompts
-- **User guidance** - Explicit instructions for each scenario
+## 5. Clarification System for Ambiguous Queries
 
-## 🔍 Clarification System
+All main prompts include a built-in **clarification path**, which asks the user key missing details (like location or timeframe).  
+This was designed to avoid hallucinating answers for vague prompts and improve conversational realism.
 
-### Design Principles
+>  Instead of guessing, the model behaves like a smart assistant — it **asks the right questions**, then waits.
 
-#### 1. **Targeted Question Framework**
-Each category has specific clarifying questions:
+This is handled both at the prompt level (via `PATH 1`) and in the JSON classification (`needs_clarification = true`).
 
-**Destination Questions**:
-- **Timing**: When do you want to travel?
-- **Budget**: What's your budget range?
-- **Interests**: What type of experience interests you most?
-- **Travel Style**: Who are you traveling with?
+---
 
-**Packing Questions**:
-- **Destination & Timing**: Where and when?
-- **Trip Style**: Business, leisure, adventure?
-- **Activities**: What activities do you plan?
+## 6. Anti-Hallucination Measures
 
-**Attraction Questions**:
-- **Time Frame**: How long are you staying?
-- **Interests**: What interests you most?
-- **Travel Style**: What's your pace?
+Several steps were taken to **reduce hallucinations**:
 
-#### 2. **Example-Driven Learning**
-```
-Examples of good clarifying responses:
-- "I'd love to help you find the perfect destination! To give you the best recommendations, could you tell me: 1) When are you planning to travel? 2) What's your budget range? 3) What type of experience interests you most - relaxation, adventure, culture, or something else?"
-```
+- In the `WEATHER_SYSTEM_PROMPT`, the model is told to:
+  - Avoid fake forecasts  
+  - Warn about missing data  
+  - Recommend official sources
 
-**Rationale**:
-- **Consistent tone** - Maintains friendly, helpful voice
-- **Clear structure** - Numbered questions for easy response
-- **Specific options** - Provides examples to guide user responses
+- In the packing prompt, the assistant is **forbidden from suggesting obvious or irrelevant items** (e.g., "passport").
 
-## 🧩 Chain of Thought Implementation
+> ⚠These defenses improved **trustworthiness** and avoided factual errors — especially when API data was missing or partial.
 
-### Design: `COMPLEX_REASONING_PROMPT`
+---
 
-**Purpose**: Multi-step reasoning for complex destination recommendations.
+## 7. CogNitive Verifier Pattern
 
-#### 1. **Structured Reasoning Process**
-```
-CORE PRINCIPLES (NON-NEGOTIABLE):
-1. **Strict Constraint Adherence:** You MUST meticulously analyze and adhere to all explicit constraints in the user's query.
-2. **Decisiveness:** Since the user has provided a detailed query, your goal is to provide a confident, final recommendation, NOT to ask for more information.
-3. **Faithfulness:** Your final recommendation MUST be the direct and logical result of your internal reasoning process.
-```
+I designed our classification and reasoning prompts to include **self-verification** mechanisms:
 
-#### 2. **Dynamic Output Formatting**
-```
-{output_format_instructions}
-```
+- In the JSON classification, the LLM must **justify** whether clarification is needed
+- In complex reasoning, it must **reason internally** before giving an answer
 
-**Normal Mode Instructions**:
-- Keep responses to maximum 2-3 sentences total
-- Focus on the primary recommendation
-- Be concise and actionable
+>  These design patterns reduce randomness and **force the LLM to think before speaking**.
 
-**Debug Mode Instructions**:
-- Show the complete reasoning process
-- Include all analysis steps
-- Display decision rationale
+---
 
-#### 3. **Anti-Hallucination Measures**
-```
-CRITICAL ANTI-HALLUCINATION RULES:
-- If you're not certain about specific details (hours, prices, exact names), generalize or say "check the official website"
-- Never make up specific details you're not sure about
-- If unsure about current information, suggest checking official sources
-```
+## 8. Prompt Chaining with Context Memory
 
-## 🛡️ Anti-Hallucination Measures
+To maintain context across turns, we used a **prompt chaining architecture**:
 
-### Multi-Layer Protection
+- Each message is processed through:
+  1. Classification
+  2. Context analysis
+  3. System prompt selection
 
-#### 1. **Prompt-Level Rules**
-Every system prompt includes:
-```
-Rules:
-- For hours/prices: only mention if you're certain, otherwise say "check the official website"
-- If unsure about exact names/details, generalize or say "not sure"
-- Avoid making up specific details you're not sure about
-- If unsure about current information, suggest checking official sources
-```
+- Previous messages (`conversation_history`) are passed into classification to resolve references like “that trip”.
 
-#### 2. **Structured Output Requirements**
-```
-You must respond with ONLY valid JSON. No other text.
-Do not include any text before or after the JSON. No markdown.
-Use lowercase booleans (true/false), no quotes around booleans.
-```
-
-#### 3. **Context Validation**
-- **Weather data integration** - Uses real API data instead of assumptions
-- **Location verification** - Geocoding validation for weather requests
-- **Time reference handling** - Proper parsing of temporal expressions
-
-## 🔄 Context Management
-
-### Conversation History Integration
-
-#### 1. **Smart Context Selection**
-```python
-context_messages = conversation_history[-4:]  # Last 4 messages (2 exchanges)
-context_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in context_messages])
-```
-
-**Rationale**:
-- **Relevant context** - Only recent conversation matters
-- **Token efficiency** - Limits context to essential information
-- **Performance** - Reduces processing time
-
-#### 2. **Context-Aware Classification**
-```
-- "So what should I pack for that kind of trip?" (with context about Spain in June) 
--> PACKING, needs_weather: true, mode: climate, city: null, country: Spain, when: June, needs_clarification: false
-```
-
-**Benefits**:
-- **Natural follow-ups** - Understands pronoun references
-- **Reduced clarification** - Uses previous context to fill gaps
-- **Better user experience** - Maintains conversation flow
-
-## ⚡ Performance Optimizations
-
-### 1. **Unified Analysis**
-**Before**: 3 separate LLM calls (classification + weather decision + location extraction)
-**After**: 1 LLM call for all analysis
-
-**Impact**: 
-- **3x faster** analysis phase
-- **Reduced API costs** - Fewer token usage
-- **Better consistency** - Single reasoning process
-
-### 2. **Token Management**
-```python
-MAX_TOKENS_TOOL = 128        # For classification/decision calls
-MAX_TOKENS_GENERATION = 1024 # For final responses
-MAX_TOKENS_DEBUG = 1024      # For debug mode with chain of thought
-```
-
-**Rationale**:
-- **Efficient classification** - Short, focused prompts for analysis
-- **Rich responses** - Adequate tokens for detailed answers
-- **Cost optimization** - Right-sized tokens for each use case
-
-### 3. **Caching Strategy**
-```python
-self.cache_duration = 300  # 5 minutes for weather data
-```
-
-**Benefits**:
-- **Reduced API calls** - Weather data cached for 5 minutes
-- **Faster responses** - Instant retrieval for recent requests
-- **Cost savings** - Fewer external API calls
-
-## 🎯 Key Success Factors
-
-### 1. **Explicit Instructions**
-Every prompt includes:
-- **Clear role definition** - "You are a travel destination expert"
-- **Specific task description** - "Your task is to respond to the user's query"
-- **Concrete examples** - Real question-answer pairs
-- **Anti-hallucination rules** - Explicit safety measures
-
-### 2. **Consistent Patterns**
-- **Two-path structure** - Clarification vs. Direct response
-- **JSON output format** - Structured, parseable responses
-- **Example-driven learning** - Consistent tone and format
-- **Error handling** - Graceful degradation strategies
-
-### 3. **Context Awareness**
-- **Conversation history** - Maintains context across exchanges
-- **Weather integration** - Real-time data for relevant responses
-- **Location extraction** - Smart parsing of geographic references
-- **Temporal understanding** - Handles time references correctly
-
-#
+>  This allows the assistant to **understand follow-ups** and maintain logical continuity — a key for natural conversations.
 
