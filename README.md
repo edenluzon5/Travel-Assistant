@@ -80,7 +80,7 @@ Each prompt includes strict behavioral constraints, fallback strategies, and gua
 
 
 ##  Run
-**🌐 Web interface (recommended):**
+**🌐 Web interface:**
 ```bash
 streamlit run app.py
 ```
@@ -92,6 +92,7 @@ python main.py
 ```
 
 **Ready to start planning your trip?** 🚀
+
 
 
 
